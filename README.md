@@ -2,6 +2,8 @@
 
 This repository distributes the complete Linux arm64 runtime as two public container images: the Rust gateway with its Python management services and web UI, and the official Codex engine with its Python supervisor. MySQL and Redis are pulled by Compose. The Rust source is kept in a separate private repository; Python runtime files are included in the images.
 
+Each runtime image is published in its own Docker Hub repository with `latest` and a shared UTC timestamp tag. The supplied `.env` selects the matching timestamp pair; Compose defaults to `latest` if those entries are removed. MySQL and Redis use ordinary version tags without digest suffixes.
+
 ## Deploy
 
 Install Docker with Compose, then run from this directory:
@@ -20,9 +22,9 @@ docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/manage
 docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/api-token
 ```
 
-Treat both values as secrets. The `.env` file contains only public configuration and pinned image digests. The Compose project name is `codex-engine-public`; changing it later selects a different set of volumes.
+Treat both values as secrets. The `.env` file contains only public configuration and runtime image tags. The Compose project name is `codex-engine-public`; changing it later selects a different set of volumes.
 
-`deploy.sh` is deliberately limited to pulling the pinned images and starting Compose. Re-running it with unchanged `.env` preserves the volumes. In-place version changes and engine upgrades require the controlled drain and migration workflow; replacing image digests while requests are active is outside this deployment command.
+`deploy.sh` is deliberately limited to pulling images and starting Compose. Re-running it preserves the volumes; the timestamp-tagged gateway and engine remain on the selected release pair. MySQL and Redis version tags are maintained upstream and may change when pulled again. In-place version changes and engine upgrades require the controlled drain and migration workflow; replacing runtime image tags while requests are active is outside this deployment command.
 
 ## Distribution terms
 

@@ -1,12 +1,12 @@
 name: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
 
 x-gateway: &gateway
-  image: ${CODEX_GATEWAY_IMAGE:-wxyin/codex-engine@sha256:06dc54b0a2fb92a1cf63b484cb58c63d892493320cb69980f534ae6b6313e212}
+  image: ${CODEX_GATEWAY_IMAGE:-wxyin/codex-engine-gateway:latest}
   platform: linux/arm64
 
 services:
   engine-image:
-    image: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+    image: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
     platform: linux/arm64
     entrypoint: [/bin/true]
     network_mode: none
@@ -18,7 +18,7 @@ services:
     environment:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
       CODEX_NATIVE_VERSION: "0.155.1"
-      CODEX_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+      CODEX_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
       ACCOUNT_DEFAULT_PROXY_SCHEME: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}
     depends_on:
       engine-image: {condition: service_completed_successfully}
@@ -53,7 +53,7 @@ services:
     restart: "no"
 
   mysql:
-    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    image: mysql:8.4
     platform: linux/arm64
     restart: unless-stopped
     depends_on:
@@ -77,7 +77,7 @@ services:
       start_period: 30s
 
   redis:
-    image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    image: redis:8.10.0-alpine
     platform: linux/arm64
     restart: unless-stopped
     depends_on:
@@ -135,7 +135,7 @@ services:
     environment:
       ACCOUNT_MANAGER_STATE: /run/manager/runtime
       ACCOUNT_MANAGER_PROJECT: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
-      ACCOUNT_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+      ACCOUNT_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
       ACCOUNT_ENGINE_RELEASES: /run/manager/releases
       ACCOUNT_ENGINE_NETWORK: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_engine-plane
       ACCOUNT_PUBLIC_CA_VOLUME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_public-ca
