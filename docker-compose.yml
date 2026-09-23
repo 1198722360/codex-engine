@@ -1,0 +1,212 @@
+name: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
+
+x-gateway: &gateway
+  image: ${CODEX_GATEWAY_IMAGE:-wxyin/codex-engine@sha256:06dc54b0a2fb92a1cf63b484cb58c63d892493320cb69980f534ae6b6313e212}
+  platform: linux/arm64
+
+services:
+  engine-image:
+    image: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+    platform: linux/arm64
+    entrypoint: [/bin/true]
+    network_mode: none
+    restart: "no"
+
+  init:
+    <<: *gateway
+    entrypoint: [python3, /opt/dispatcher/public-init.py]
+    environment:
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
+      CODEX_NATIVE_VERSION: "0.155.1"
+      CODEX_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+      ACCOUNT_DEFAULT_PROXY_SCHEME: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}
+    depends_on:
+      engine-image: {condition: service_completed_successfully}
+    network_mode: none
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - gateway-state:/init/gateway
+      - manager-state:/init/manager
+      - engine-bootstrap:/init/engine-bootstrap
+      - mysql-secrets:/init/mysql-secrets
+      - redis-secrets:/init/redis-secrets
+    restart: "no"
+
+  ca-init:
+    <<: *gateway
+    command: [--init-native-ca]
+    depends_on:
+      init: {condition: service_completed_successfully}
+    network_mode: none
+    volumes: [private-ca:/var/lib/dispatcher/ca]
+    restart: "no"
+
+  ca-publish:
+    <<: *gateway
+    entrypoint: [python3, /opt/dispatcher/publish-ca.py]
+    depends_on:
+      ca-init: {condition: service_completed_successfully}
+    network_mode: none
+    volumes:
+      - private-ca:/private-ca:ro
+      - public-ca:/public-ca
+    restart: "no"
+
+  mysql:
+    image: mysql:8.4@sha256:b3b90af2a6552ae30c266fdb7d5dd55f3afb72404bb78d37fe8a23eb857fd3fb
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      init: {condition: service_completed_successfully}
+    environment:
+      MYSQL_DATABASE: dispatcher_next
+      MYSQL_USER: dispatcher
+      MYSQL_PASSWORD_FILE: /run/secrets/mysql-password
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
+    volumes:
+      - mysql-secrets:/run/secrets:ro
+      - mysql-data:/var/lib/mysql
+    networks: [data-plane]
+    mem_limit: 1g
+    pids_limit: 256
+    healthcheck:
+      test: [CMD, mysqladmin, ping, --host=127.0.0.1, --silent]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  redis:
+    image: redis:8.10.0-alpine@sha256:978f0e01593e65eed801f2402944efcd936d43b5027e4908a7897baf88ed6241
+    platform: linux/arm64
+    restart: unless-stopped
+    depends_on:
+      init: {condition: service_completed_successfully}
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        secret=$$(cat /run/secrets/redis-password)
+        case "$$secret" in *[!a-f0-9]*|'') exit 1;; esac
+        printf 'bind 0.0.0.0\nprotected-mode yes\nport 6379\nrequirepass %s\nmaxmemory 64mb\nmaxmemory-policy allkeys-lru\nsave ""\nappendonly no\n' "$$secret" > /data/dispatcher.conf
+        chown redis:redis /data/dispatcher.conf
+        unset secret
+        exec /usr/local/bin/docker-entrypoint.sh redis-server /data/dispatcher.conf
+    volumes:
+      - redis-secrets:/run/secrets:ro
+      - redis-data:/data
+    networks: [data-plane]
+    mem_limit: 128m
+    pids_limit: 64
+    healthcheck:
+      test: [CMD-SHELL, 'REDISCLI_AUTH="$$(cat /run/secrets/redis-password)" redis-cli ping >/dev/null']
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  parent-relay:
+    <<: *gateway
+    restart: unless-stopped
+    user: '65534:65534'
+    entrypoint: [python3, /opt/dispatcher/parent-relay.py]
+    environment:
+      PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-7897}
+    extra_hosts: [host.docker.internal:host-gateway]
+    networks: [parent-plane, external]
+    ports: ["${GATEWAY_HOST_PORT:-18183}:18083"]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    mem_limit: 96m
+    pids_limit: 300
+    stop_grace_period: 10s
+    healthcheck:
+      test: [CMD, python3, -c, "import socket; socket.create_connection(('127.0.0.1',17897),2).close()"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  account-manager:
+    <<: *gateway
+    restart: unless-stopped
+    entrypoint: [python3, /opt/dispatcher/account-environment-manager.py]
+    depends_on:
+      ca-publish: {condition: service_completed_successfully}
+    environment:
+      ACCOUNT_MANAGER_STATE: /run/manager/runtime
+      ACCOUNT_MANAGER_PROJECT: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
+      ACCOUNT_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine@sha256:1e7ac0f6d24d12b24d802486567a303dcad23898cb29c0e6331cc89f95d065c1}
+      ACCOUNT_ENGINE_RELEASES: /run/manager/releases
+      ACCOUNT_ENGINE_NETWORK: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_engine-plane
+      ACCOUNT_PUBLIC_CA_VOLUME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_public-ca
+      ACCOUNT_DEFAULT_PROXY: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}://parent-relay:17897
+      NATIVE_METRIC_EXPORT_INTERVAL_MS: ${NATIVE_METRIC_EXPORT_INTERVAL_MS:-10000}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - manager-state:/run/manager
+    networks: [engine-plane, parent-plane, external]
+    extra_hosts: [host.docker.internal:host-gateway]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: ["/tmp:mode=1777,size=16m"]
+    mem_limit: 512m
+    pids_limit: 512
+    stop_grace_period: 300s
+    healthcheck:
+      test: [CMD, python3, -c, "from pathlib import Path; import urllib.request; r=urllib.request.Request('http://127.0.0.1:19091/health',headers={'Authorization':'Bearer '+Path('/run/manager/manager-token').read_text().strip()}); urllib.request.urlopen(r,timeout=3).close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+
+  gateway:
+    <<: *gateway
+    restart: unless-stopped
+    depends_on:
+      mysql: {condition: service_healthy}
+      redis: {condition: service_healthy}
+      parent-relay: {condition: service_healthy}
+      account-manager: {condition: service_healthy}
+    environment:
+      RUST_LOG: warn
+      DISPATCHER_NEXT_PUBLIC_URL: ${DISPATCHER_NEXT_PUBLIC_URL:-}
+    volumes:
+      - gateway-state:/run/bootstrap:ro
+      - private-ca:/var/lib/dispatcher/ca
+      - gateway-capture:/var/lib/dispatcher/capture
+      - gateway-resources:/var/lib/dispatcher/resources
+    tmpfs:
+      - /run/gateway:mode=0700,size=1m
+      - /tmp:mode=1777,size=256m
+    networks: [engine-plane, data-plane, parent-plane]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_OVERRIDE, FOWNER, SETUID, SETGID]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 2g
+    pids_limit: 256
+    stop_grace_period: 180s
+    healthcheck:
+      test: [CMD, python3, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:18083/health',timeout=3).close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 24
+      start_period: 15s
+
+networks:
+  engine-plane: {internal: true}
+  data-plane: {internal: true}
+  parent-plane: {internal: true}
+  external: {}
+
+volumes:
+  gateway-state: {}
+  manager-state: {}
+  engine-bootstrap: {}
+  mysql-secrets: {}
+  redis-secrets: {}
+  private-ca: {}
+  public-ca: {}
+  mysql-data: {}
+  redis-data: {}
+  gateway-capture: {}
+  gateway-resources: {}
