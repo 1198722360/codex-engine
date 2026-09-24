@@ -91,7 +91,7 @@ Use `docker compose ps` and `docker compose logs --tail=100 gateway account-mana
 
 Re-running `./deploy.sh` retains volumes but pulls the current `:latest` images. MySQL and Redis version tags are maintained upstream and may change on a later pull. Even under the same `:latest` tag, a changed Engine image identity is rejected by the saved release manifest; a normal `deploy.sh` rerun is therefore not an upgrade path. An Engine update needs the controlled drain and migration flow before replacement.
 
-An isolated fresh install with authenticated GHCR pulls passed Compose startup, service health, the web endpoint, repeated deployment, and TLS verification through the default direct route. Anonymous pulls from public GHCR packages still need verification. Fresh OAuth authorization, live model calls, and running cross-version upgrades also remain unverified. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
+Anonymous GHCR pulls and a fresh install from the public repository passed Compose startup, service health, and the web endpoint. A separate isolated install passed repeated deployment and TLS verification through the default direct route. Fresh OAuth authorization, live model calls, and running cross-version upgrades remain unverified. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
 
 ## Distribution terms
 
