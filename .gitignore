@@ -1,0 +1,13 @@
+# Deployment state and credentials created beside docker-compose.yml.
+gateway-state/
+manager-state/
+engine-bootstrap/
+mysql-secrets/
+redis-secrets/
+private-ca/
+public-ca/
+mysql-data/
+redis-data/
+gateway-capture/
+gateway-resources/
+account-volumes/

@@ -18,14 +18,14 @@ services:
     network_mode: none
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - gateway-state:/init/gateway
-      - manager-state:/init/manager
-      - engine-bootstrap:/init/engine-bootstrap
-      - mysql-secrets:/init/mysql-secrets
-      - redis-secrets:/init/redis-secrets
-      - private-ca:/var/lib/dispatcher/ca
-      - private-ca:/private-ca:ro
-      - public-ca:/public-ca
+      - ./gateway-state:/init/gateway
+      - ./manager-state:/init/manager
+      - ./engine-bootstrap:/init/engine-bootstrap
+      - ./mysql-secrets:/init/mysql-secrets
+      - ./redis-secrets:/init/redis-secrets
+      - ./private-ca:/var/lib/dispatcher/ca
+      - ./private-ca:/private-ca:ro
+      - ./public-ca:/public-ca
     restart: "no"
 
   mysql:
@@ -39,8 +39,8 @@ services:
       MYSQL_PASSWORD_FILE: /run/secrets/mysql-password
       MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql-root-password
     volumes:
-      - mysql-secrets:/run/secrets:ro
-      - mysql-data:/var/lib/mysql
+      - ./mysql-secrets:/run/secrets:ro
+      - ./mysql-data:/var/lib/mysql
     networks: [data-plane]
     mem_limit: 1g
     pids_limit: 256
@@ -59,8 +59,8 @@ services:
     entrypoint: [/bin/sh, /opt/dispatcher/start-redis.sh]
     volumes:
       - ./start-redis.sh:/opt/dispatcher/start-redis.sh:ro
-      - redis-secrets:/run/secrets:ro
-      - redis-data:/data
+      - ./redis-secrets:/run/secrets:ro
+      - ./redis-data:/data
     networks: [data-plane]
     mem_limit: 128m
     pids_limit: 64
@@ -105,11 +105,15 @@ services:
       ACCOUNT_ENGINE_RELEASES: /run/manager/releases
       ACCOUNT_ENGINE_NETWORK: ${COMPOSE_PROJECT_NAME}_engine-plane
       ACCOUNT_PUBLIC_CA_VOLUME: ${COMPOSE_PROJECT_NAME}_public-ca
+      ACCOUNT_ENGINE_VOLUME_HOST_ROOT: ${CODEX_ENGINE_DEPLOY_DIR:-${PWD}}/account-volumes
+      ACCOUNT_ENGINE_VOLUME_CONTAINER_ROOT: /var/lib/dispatcher/account-volumes
+      ACCOUNT_PUBLIC_CA_HOST_ROOT: ${CODEX_ENGINE_DEPLOY_DIR:-${PWD}}/public-ca
       ACCOUNT_DEFAULT_PROXY: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}://parent-relay:17897
       NATIVE_METRIC_EXPORT_INTERVAL_MS: ${NATIVE_METRIC_EXPORT_INTERVAL_MS:-10000}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - manager-state:/run/manager
+      - ./manager-state:/run/manager
+      - ./account-volumes:/var/lib/dispatcher/account-volumes
     networks: [engine-plane, parent-plane, external]
     extra_hosts: [host.docker.internal:host-gateway]
     cap_drop: [ALL]
@@ -138,10 +142,10 @@ services:
       RUST_LOG: warn
       DISPATCHER_NEXT_PUBLIC_URL: ${DISPATCHER_NEXT_PUBLIC_URL:-}
     volumes:
-      - gateway-state:/run/bootstrap:ro
-      - private-ca:/var/lib/dispatcher/ca
-      - gateway-capture:/var/lib/dispatcher/capture
-      - gateway-resources:/var/lib/dispatcher/resources
+      - ./gateway-state:/run/bootstrap:ro
+      - ./private-ca:/var/lib/dispatcher/ca
+      - ./gateway-capture:/var/lib/dispatcher/capture
+      - ./gateway-resources:/var/lib/dispatcher/resources
     tmpfs:
       - /run/gateway:mode=0700,size=1m
       - /tmp:mode=1777,size=256m
@@ -164,16 +168,3 @@ networks:
   data-plane: {internal: true}
   parent-plane: {internal: true}
   external: {}
-
-volumes:
-  gateway-state: {}
-  manager-state: {}
-  engine-bootstrap: {}
-  mysql-secrets: {}
-  redis-secrets: {}
-  private-ca: {}
-  public-ca: {}
-  mysql-data: {}
-  redis-data: {}
-  gateway-capture: {}
-  gateway-resources: {}

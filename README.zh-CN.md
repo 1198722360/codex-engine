@@ -24,7 +24,7 @@ flowchart LR
     relay -->|直连 CONNECT，或已配置的宿主代理| upstream
 ```
 
-Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL、Redis。`deploy.sh` 先拉取 Engine 镜像，再由一个临时 `init` 服务在 Gateway 镜像内生成凭据、私有 CA 并核对引擎发布清单。账号管理器另外为每个账号创建 Engine 容器及私有数据卷；这些容器不在 Compose 静态服务列表中。
+Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL、Redis。`deploy.sh` 先拉取 Engine 镜像，再由一个临时 `init` 服务在 Gateway 镜像内生成凭据、私有 CA 并核对引擎发布清单。持久化数据直接保存在 `docker-compose.yml` 同目录下的 `gateway-state/`、`manager-state/`、`engine-bootstrap/`、`mysql-secrets/`、`redis-secrets/`、`private-ca/`、`public-ca/`、`mysql-data/`、`redis-data/`、`gateway-capture/`、`gateway-resources/` 和 `account-volumes/`。账号管理器为每个账号创建由 `account-volumes/` 提供存储的 Engine 容器；这些容器不在 Compose 静态服务列表中。
 
 模型请求进入网关后，先验证客户端 API Key、绑定已登记对话并选择符合条件的账号。原生 Engine 的请求经拦截入口发出；网关以该原生请求为基础，替换影响响应的客户端业务字段，处理受支持的 ID 与账号归属状态，再通过选定代理转发。响应及已观测的遥测经网关返回。HTTP/WS 录制是管理界面的选配功能；录制内容按规则脱敏或省略。客户端仅修改 Base URL，不会把全部本地工具执行事实传给服务端。
 
@@ -49,7 +49,7 @@ curl -fsS http://127.0.0.1:18183/health
 
 仓库跟踪的 `.env` 含有 `WEB_PASSWORD=123456` 和 `CLIENT_API_KEY=123456`。这两项是公开、所有下载者共用的示例凭据；在允许其他设备访问前，请先改掉。`WEB_PASSWORD` 用于网页和管理 API（`Authorization: Bearer <WEB_PASSWORD>`），`CLIENT_API_KEY` 用于客户端业务请求；两者都不是上游 OAuth 凭据。默认出口不需要宿主代理。
 
-`deploy.sh` 会先按 Compose 标签清理旧版遗留的 `engine-image` 一次性容器，再运行 `docker compose pull`、拉取 `ghcr.io/1198722360/codex-engine-engine:latest`，最后运行 `docker compose up -d --remove-orphans`。这一步不删除数据卷和常驻服务。一次性 `init` 服务在 Gateway 镜像内完成身份、CA 和引擎清单检查。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建私有 CA、内部凭据和命名卷。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
+`deploy.sh` 会先切换到部署文件所在目录，并按 Compose 标签清理旧版遗留的 `engine-image` 一次性容器，再运行 `docker compose pull`、拉取 `ghcr.io/1198722360/codex-engine-engine:latest`，最后运行 `docker compose up -d --remove-orphans`。这一步不删除本地数据目录和常驻服务。一次性 `init` 服务在 Gateway 镜像内完成身份、CA 和引擎清单检查。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建上述本地目录。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
 
 在部署宿主机访问 `http://127.0.0.1:18183/`。从其他设备访问时，把 `127.0.0.1` 换成宿主机实际地址。若 18183 已被占用，先修改 `.env` 的 `GATEWAY_HOST_PORT`。
 
