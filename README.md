@@ -2,7 +2,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-Codex Engine is a self-hosted gateway for Codex Responses traffic. It runs official Codex engines under separately managed OAuth accounts, assigns a native TUI to each registered main conversation, and routes client requests through a Rust gateway. This repository contains deployment files; the complete runtime is distributed as Linux arm64 container images. Rust source is private, while Python runtime files are included in the images.
+Codex Engine is a self-hosted gateway for Codex Responses traffic. It runs official Codex engines under separately managed OAuth accounts, assigns a native TUI to each registered main conversation, and routes client requests through a Rust gateway. This repository contains deployment files; the complete runtime is distributed as container images. Rust source is private, while Python runtime files are included in the images.
 
 The current public image pair contains Codex **0.155.1**. The [v0.2.2 Release](https://github.com/1198722360/codex-engine/releases/tag/v0.2.2) contains the complete runtime image archive; v0.1.0 contains only a standalone gateway binary.
 
@@ -24,13 +24,13 @@ flowchart LR
     relay -->|direct CONNECT, or configured host proxy| upstream
 ```
 
-The five long-running Compose services are the gateway, account manager, parent relay, MySQL, and Redis. One-shot services initialize credentials, the private CA, and the engine image. The account manager creates an additional Engine container and private volumes for each account; those containers are not static Compose services.
+The five long-running Compose services are the gateway, account manager, parent relay, MySQL, and Redis. One short-lived `init` service initializes credentials and the private CA after `deploy.sh` pulls the Engine image. The account manager creates an additional Engine container and private volumes for each account; those containers are not static Compose services.
 
 For a model request, the gateway checks the client API key, binds the request to a conversation, and selects an eligible account. The native Engine sends its own request through the interception endpoint. The gateway starts from that native request, applies client fields that affect the response, maps supported identifiers and account-bound state, then forwards it through the selected proxy. Responses and observed telemetry return through the gateway. HTTP/WS event recording is an optional admin setting; recorded content is redacted or omitted where required. Changing only a client's Base URL does not provide every client-side tool execution fact to the server.
 
 ## Requirements
 
-- Docker with Compose on Linux arm64 or Apple Silicon with Docker Desktop. The published gateway and engine images currently contain only `linux/arm64`; an x86_64 host requires arm64 binfmt/QEMU or a separately published amd64 build. Before a server deploy, confirm that both GHCR packages are set to **Public**. A private package returns `unauthorized` to an otherwise correct `docker compose pull`.
+- Docker with Compose on Linux amd64/arm64 or Apple Silicon with Docker Desktop. The Compose file leaves platform selection to Docker; published tags must contain both `linux/amd64` and `linux/arm64`. Check a tag with `docker buildx imagetools inspect ghcr.io/1198722360/codex-engine-engine:latest` before deploying. The private source build publishes both platforms with `scripts/publish-runtime-images.sh`; the publisher must first run `docker login ghcr.io` with a GitHub Token that has `write:packages`. Before a server deploy, confirm that both GHCR packages are set to **Public**. A private package returns `unauthorized` to an otherwise correct `docker compose pull`.
 - The default outbound route is direct through a restricted HTTP CONNECT relay. It permits `chatgpt.com:443`, `ab.chatgpt.com:443`, and `auth.openai.com:443`. A host proxy is optional: set `PARENT_PROXY_PORT` in `.env` to a proxy port reachable by containers through `host.docker.internal`, and set `ACCOUNT_DEFAULT_PROXY_SCHEME` to `http` or `socks5h` to match that proxy. Leave the port empty or unset for direct egress; in that mode the scheme must be `http`. A host proxy listening only on loopback may not accept container connections. Individual accounts may use their own proxy in the web UI.
 - Docker socket access: initialization inspects the Engine image, and the account manager creates isolated Engine containers. Protect the host and Docker daemon.
 
@@ -49,7 +49,7 @@ curl -fsS http://127.0.0.1:18183/health
 
 The tracked `.env` contains `WEB_PASSWORD=123456` and `CLIENT_API_KEY=123456`. These are public, shared example credentials, so change both values before deploying on a reachable host. `WEB_PASSWORD` authenticates the web UI and management API (`Authorization: Bearer <WEB_PASSWORD>`); `CLIENT_API_KEY` authenticates client requests. Neither is an upstream OAuth credential. The default route needs no host proxy.
 
-`deploy.sh` runs `docker compose pull` and `docker compose up -d --remove-orphans`. Keep the supplied `start-redis.sh` beside `docker-compose.yml`; Compose mounts it read-only into the Redis container for password validation and configuration generation. The first start stores the two configured access credentials and creates a private CA, internal credentials, and named volumes. It also registers a disabled **Initial account**; it does not authorize that account automatically. To rotate either access credential later, edit `.env` and rerun `./deploy.sh`. Sign in again with the new web password, and update clients that use the old API key.
+`deploy.sh` runs `docker compose pull`, pulls `ghcr.io/1198722360/codex-engine-engine:latest`, and runs `docker compose up -d --remove-orphans`. The one-shot `init` service performs the identity, CA, and release checks inside the Gateway image. Keep the supplied `start-redis.sh` beside `docker-compose.yml`; Compose mounts it read-only into the Redis container for password validation and configuration generation. The first start stores the two configured access credentials and creates a private CA, internal credentials, and named volumes. It also registers a disabled **Initial account**; it does not authorize that account automatically. To rotate either access credential later, edit `.env` and rerun `./deploy.sh`. Sign in again with the new web password, and update clients that use the old API key.
 
 The web UI is at `http://127.0.0.1:18183/` on the deployment host. For another device, replace `127.0.0.1` with the host's reachable address. Change `GATEWAY_HOST_PORT` in `.env` if 18183 is occupied.
 

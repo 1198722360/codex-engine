@@ -2,19 +2,11 @@ name: codex-engine-public
 
 x-gateway: &gateway
   image: ghcr.io/1198722360/codex-engine-gateway:latest
-  platform: linux/arm64
 
 services:
-  engine-image:
-    image: ghcr.io/1198722360/codex-engine-engine:latest
-    platform: linux/arm64
-    entrypoint: [/bin/true]
-    network_mode: none
-    restart: "no"
-
   init:
     <<: *gateway
-    entrypoint: [python3, /opt/dispatcher/public-init.py]
+    entrypoint: [python3, /opt/dispatcher/public-init-all.py]
     environment:
       COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
       CODEX_NATIVE_VERSION: "0.155.1"
@@ -23,8 +15,6 @@ services:
       PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-}
       WEB_PASSWORD: ${WEB_PASSWORD:?Set WEB_PASSWORD in .env}
       CLIENT_API_KEY: ${CLIENT_API_KEY:?Set CLIENT_API_KEY in .env}
-    depends_on:
-      engine-image: {condition: service_completed_successfully}
     network_mode: none
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -33,31 +23,12 @@ services:
       - engine-bootstrap:/init/engine-bootstrap
       - mysql-secrets:/init/mysql-secrets
       - redis-secrets:/init/redis-secrets
-    restart: "no"
-
-  ca-init:
-    <<: *gateway
-    command: [--init-native-ca]
-    depends_on:
-      init: {condition: service_completed_successfully}
-    network_mode: none
-    volumes: [private-ca:/var/lib/dispatcher/ca]
-    restart: "no"
-
-  ca-publish:
-    <<: *gateway
-    entrypoint: [python3, /opt/dispatcher/publish-ca.py]
-    depends_on:
-      ca-init: {condition: service_completed_successfully}
-    network_mode: none
-    volumes:
-      - private-ca:/private-ca:ro
+      - private-ca:/var/lib/dispatcher/ca
       - public-ca:/public-ca
     restart: "no"
 
   mysql:
     image: mysql:8.4
-    platform: linux/arm64
     restart: unless-stopped
     depends_on:
       init: {condition: service_completed_successfully}
@@ -81,7 +52,6 @@ services:
 
   redis:
     image: redis:8.10.0-alpine
-    platform: linux/arm64
     restart: unless-stopped
     depends_on:
       init: {condition: service_completed_successfully}
@@ -126,7 +96,7 @@ services:
     restart: unless-stopped
     entrypoint: [python3, /opt/dispatcher/account-environment-manager.py]
     depends_on:
-      ca-publish: {condition: service_completed_successfully}
+      init: {condition: service_completed_successfully}
     environment:
       ACCOUNT_MANAGER_STATE: /run/manager/runtime
       ACCOUNT_MANAGER_PROJECT: ${COMPOSE_PROJECT_NAME}

@@ -2,7 +2,7 @@
 
 [English](README.md) · **简体中文**
 
-Codex Engine 是自托管的 Codex Responses 网关。它为分别管理的 OAuth 账号运行官方 Codex 引擎，为每个已登记的主对话分配原生 TUI，并通过 Rust 网关处理客户端请求。本仓库提供部署文件；完整运行程序以 Linux arm64 容器镜像发布。Rust 源码存放在私有仓库，运行所需的 Python 文件包含在镜像中。
+Codex Engine 是自托管的 Codex Responses 网关。它为分别管理的 OAuth 账号运行官方 Codex 引擎，为每个已登记的主对话分配原生 TUI，并通过 Rust 网关处理客户端请求。本仓库提供部署文件；完整运行程序以容器镜像发布。Rust 源码存放在私有仓库，运行所需的 Python 文件包含在镜像中。
 
 当前公开镜像包含 Codex **0.155.1**。[v0.2.2 Release](https://github.com/1198722360/codex-engine/releases/tag/v0.2.2) 提供完整运行镜像归档；更早的 v0.1.0 仅提供独立网关二进制。
 
@@ -24,13 +24,13 @@ flowchart LR
     relay -->|直连 CONNECT，或已配置的宿主代理| upstream
 ```
 
-Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL、Redis。一次性服务负责生成凭据、私有 CA 并准备引擎镜像。账号管理器另外为每个账号创建 Engine 容器及私有数据卷；这些容器不在 Compose 静态服务列表中。
+Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL、Redis。`deploy.sh` 先拉取 Engine 镜像，再由一个临时 `init` 服务在 Gateway 镜像内生成凭据、私有 CA 并核对引擎发布清单。账号管理器另外为每个账号创建 Engine 容器及私有数据卷；这些容器不在 Compose 静态服务列表中。
 
 模型请求进入网关后，先验证客户端 API Key、绑定已登记对话并选择符合条件的账号。原生 Engine 的请求经拦截入口发出；网关以该原生请求为基础，替换影响响应的客户端业务字段，处理受支持的 ID 与账号归属状态，再通过选定代理转发。响应及已观测的遥测经网关返回。HTTP/WS 录制是管理界面的选配功能；录制内容按规则脱敏或省略。客户端仅修改 Base URL，不会把全部本地工具执行事实传给服务端。
 
 ## 运行前提
 
-- 在 Linux arm64 宿主机或运行 Docker Desktop 的 Apple Silicon 电脑上安装 Docker 和 Compose 插件。当前网关和引擎镜像只发布了 `linux/arm64`；x86_64 主机需要先安装 arm64 binfmt/QEMU，或等待单独发布 amd64 镜像。服务端部署前还要确认两个 GHCR 包都设为 **Public**；包仍为私有时，即使 Compose 写法正确，拉取也会返回 `unauthorized`。
+- 在 Linux amd64/arm64 宿主机或运行 Docker Desktop 的 Apple Silicon 电脑上安装 Docker 和 Compose 插件。Compose 不再固定单一架构；发布标签须同时含有 `linux/amd64` 与 `linux/arm64`，部署前可用 `docker buildx imagetools inspect ghcr.io/1198722360/codex-engine-engine:latest` 检查。私有源码仓库使用 `scripts/publish-runtime-images.sh` 发布两种架构；发布前须先用具备 `write:packages` 权限的 GitHub Token 执行 `docker login ghcr.io`。服务端部署前还要确认两个 GHCR 包都设为 **Public**；包仍为私有时，即使 Compose 写法正确，拉取也会返回 `unauthorized`。
 - 默认出口经受限的 HTTP CONNECT 中继直连，仅允许 `chatgpt.com:443`、`ab.chatgpt.com:443` 和 `auth.openai.com:443`。宿主代理不是必需项：若要使用，在 `.env` 中把 `PARENT_PROXY_PORT` 设为容器经 `host.docker.internal` 能访问的代理端口，并按代理类型设置 `ACCOUNT_DEFAULT_PROXY_SCHEME=http` 或 `socks5h`。端口留空或不设置时走直连，此时协议须为 `http`。仅监听宿主机回环地址的代理未必接受容器连接。管理界面也支持为单个账号设置独立代理。
 - 部署环境须允许访问 Docker socket：初始化服务要读取引擎镜像身份，账号管理器要创建独立 Engine 容器。请保护宿主机和 Docker 守护进程的访问权限。
 
@@ -49,7 +49,7 @@ curl -fsS http://127.0.0.1:18183/health
 
 仓库跟踪的 `.env` 含有 `WEB_PASSWORD=123456` 和 `CLIENT_API_KEY=123456`。这两项是公开、所有下载者共用的示例凭据；在允许其他设备访问前，请先改掉。`WEB_PASSWORD` 用于网页和管理 API（`Authorization: Bearer <WEB_PASSWORD>`），`CLIENT_API_KEY` 用于客户端业务请求；两者都不是上游 OAuth 凭据。默认出口不需要宿主代理。
 
-`deploy.sh` 运行 `docker compose pull` 和 `docker compose up -d --remove-orphans`。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建私有 CA、内部凭据和命名卷。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
+`deploy.sh` 运行 `docker compose pull`、拉取 `ghcr.io/1198722360/codex-engine-engine:latest`，再运行 `docker compose up -d --remove-orphans`。一次性 `init` 服务在 Gateway 镜像内完成身份、CA 和引擎清单检查。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建私有 CA、内部凭据和命名卷。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
 
 在部署宿主机访问 `http://127.0.0.1:18183/`。从其他设备访问时，把 `127.0.0.1` 换成宿主机实际地址。若 18183 已被占用，先修改 `.env` 的 `GATEWAY_HOST_PORT`。
 
