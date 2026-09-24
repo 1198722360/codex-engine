@@ -24,6 +24,7 @@ services:
       - mysql-secrets:/init/mysql-secrets
       - redis-secrets:/init/redis-secrets
       - private-ca:/var/lib/dispatcher/ca
+      - private-ca:/private-ca:ro
       - public-ca:/public-ca
     restart: "no"
 
