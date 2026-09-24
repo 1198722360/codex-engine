@@ -85,17 +85,9 @@ services:
     restart: unless-stopped
     depends_on:
       init: {condition: service_completed_successfully}
-    entrypoint:
-      - /bin/sh
-      - -ec
-      - |
-        secret=$$(cat /run/secrets/redis-password)
-        case "$$secret" in *[!a-f0-9]*|'') exit 1;; esac
-        printf 'bind 0.0.0.0\nprotected-mode yes\nport 6379\nrequirepass %s\nmaxmemory 64mb\nmaxmemory-policy allkeys-lru\nsave ""\nappendonly no\n' "$$secret" > /data/dispatcher.conf
-        chown redis:redis /data/dispatcher.conf
-        unset secret
-        exec /usr/local/bin/docker-entrypoint.sh redis-server /data/dispatcher.conf
+    entrypoint: [/bin/sh, /opt/dispatcher/start-redis.sh]
     volumes:
+      - ./start-redis.sh:/opt/dispatcher/start-redis.sh:ro
       - redis-secrets:/run/secrets:ro
       - redis-data:/data
     networks: [data-plane]
