@@ -30,7 +30,7 @@ Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL�
 
 ## 运行前提
 
-- 在 Linux arm64 宿主机或运行 Docker Desktop 的 Apple Silicon 电脑上安装 Docker 和 Compose 插件。本包只验证了 Linux arm64 镜像；其他架构尚未验收。
+- 在 Linux arm64 宿主机或运行 Docker Desktop 的 Apple Silicon 电脑上安装 Docker 和 Compose 插件。当前网关和引擎镜像只发布了 `linux/arm64`；x86_64 主机需要先安装 arm64 binfmt/QEMU，或等待单独发布 amd64 镜像。服务端部署前还要确认两个 GHCR 包都设为 **Public**；包仍为私有时，即使 Compose 写法正确，拉取也会返回 `unauthorized`。
 - 默认出口经受限的 HTTP CONNECT 中继直连，仅允许 `chatgpt.com:443`、`ab.chatgpt.com:443` 和 `auth.openai.com:443`。宿主代理不是必需项：若要使用，在 `.env` 中把 `PARENT_PROXY_PORT` 设为容器经 `host.docker.internal` 能访问的代理端口，并按代理类型设置 `ACCOUNT_DEFAULT_PROXY_SCHEME=http` 或 `socks5h`。端口留空或不设置时走直连，此时协议须为 `http`。仅监听宿主机回环地址的代理未必接受容器连接。管理界面也支持为单个账号设置独立代理。
 - 部署环境须允许访问 Docker socket：初始化服务要读取引擎镜像身份，账号管理器要创建独立 Engine 容器。请保护宿主机和 Docker 守护进程的访问权限。
 
@@ -84,7 +84,7 @@ Compose 直接从 GitHub Container Registry 拉取 [`ghcr.io/1198722360/codex-en
 
 再次执行 `./deploy.sh` 会保留卷，但会拉取当时的 `:latest` 镜像。MySQL、Redis 的版本标签由上游维护，下次拉取时内容也会变化。即使标签仍为 `:latest`，引擎镜像身份一旦变化，已保存的版本清单仍会拒绝它；普通的 `deploy.sh` 重跑不是升级流程。更新引擎前须完成受控的请求排空与状态迁移。
 
-从公开仓库新克隆后，使用无 GHCR 凭据的 Docker 完成匿名拉取和新装，Compose 启动、服务健康与网页入口均通过。另一隔离新装完成重复部署和默认直连路由的 TLS 校验。全新账号 OAuth 授权、真实模型请求、运行中跨版本升级仍未验收。服务端遥测依照已确认的来源事实处理；证据不足的事件会留在本地，不冒充上游已交付。
+此前一套公开仓库新克隆环境完成过匿名拉取和新装，Compose 启动、服务健康与网页入口均通过；当前包可见性和服务器架构仍须在目标主机再次核对。另一隔离新装完成重复部署和默认直连路由的 TLS 校验。全新账号 OAuth 授权、真实模型请求、运行中跨版本升级仍未验收。服务端遥测依照已确认的来源事实处理；证据不足的事件会留在本地，不冒充上游已交付。
 
 ## 分发条款
 

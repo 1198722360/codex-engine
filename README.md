@@ -30,7 +30,7 @@ For a model request, the gateway checks the client API key, binds the request to
 
 ## Requirements
 
-- Docker with Compose on Linux arm64 or Apple Silicon with Docker Desktop. Other architectures have not been verified for this package.
+- Docker with Compose on Linux arm64 or Apple Silicon with Docker Desktop. The published gateway and engine images currently contain only `linux/arm64`; an x86_64 host requires arm64 binfmt/QEMU or a separately published amd64 build. Before a server deploy, confirm that both GHCR packages are set to **Public**. A private package returns `unauthorized` to an otherwise correct `docker compose pull`.
 - The default outbound route is direct through a restricted HTTP CONNECT relay. It permits `chatgpt.com:443`, `ab.chatgpt.com:443`, and `auth.openai.com:443`. A host proxy is optional: set `PARENT_PROXY_PORT` in `.env` to a proxy port reachable by containers through `host.docker.internal`, and set `ACCOUNT_DEFAULT_PROXY_SCHEME` to `http` or `socks5h` to match that proxy. Leave the port empty or unset for direct egress; in that mode the scheme must be `http`. A host proxy listening only on loopback may not accept container connections. Individual accounts may use their own proxy in the web UI.
 - Docker socket access: initialization inspects the Engine image, and the account manager creates isolated Engine containers. Protect the host and Docker daemon.
 
@@ -84,7 +84,7 @@ Use `docker compose ps` and `docker compose logs --tail=100 gateway account-mana
 
 Re-running `./deploy.sh` retains volumes but pulls the current `:latest` images. MySQL and Redis version tags are maintained upstream and may change on a later pull. Even under the same `:latest` tag, a changed Engine image identity is rejected by the saved release manifest; a normal `deploy.sh` rerun is therefore not an upgrade path. An Engine update needs the controlled drain and migration flow before replacement.
 
-Anonymous GHCR pulls and a fresh install from the public repository passed Compose startup, service health, and the web endpoint. A separate isolated install passed repeated deployment and TLS verification through the default direct route. Fresh OAuth authorization, live model calls, and running cross-version upgrades remain unverified. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
+An earlier anonymous GHCR pull and a fresh install from the public repository passed Compose startup, service health, and the web endpoint. The package visibility and host architecture must be checked again on the deployment host. A separate isolated install passed repeated deployment and TLS verification through the default direct route. Fresh OAuth authorization, live model calls, and running cross-version upgrades remain unverified. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
 
 ## Distribution terms
 
