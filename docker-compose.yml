@@ -21,6 +21,8 @@ services:
       CODEX_ENGINE_IMAGE: ghcr.io/1198722360/codex-engine-engine:latest
       ACCOUNT_DEFAULT_PROXY_SCHEME: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}
       PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-}
+      WEB_PASSWORD: ${WEB_PASSWORD:?Set WEB_PASSWORD in .env}
+      CLIENT_API_KEY: ${CLIENT_API_KEY:?Set CLIENT_API_KEY in .env}
     depends_on:
       engine-image: {condition: service_completed_successfully}
     network_mode: none
@@ -164,6 +166,7 @@ services:
     <<: *gateway
     restart: unless-stopped
     depends_on:
+      init: {condition: service_completed_successfully, restart: true}
       mysql: {condition: service_healthy}
       redis: {condition: service_healthy}
       parent-relay: {condition: service_healthy}

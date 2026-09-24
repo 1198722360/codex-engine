@@ -41,38 +41,31 @@ Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL�
 ```sh
 git clone https://github.com/1198722360/codex-engine.git
 cd codex-engine
-# .env 只设置 GATEWAY_HOST_PORT；默认出口无需宿主代理。
+# 启动前修改 .env 中的 WEB_PASSWORD 和 CLIENT_API_KEY。
 ./deploy.sh
 docker compose ps
 curl -fsS http://127.0.0.1:18183/health
 ```
 
-`deploy.sh` 只运行约定的 `docker compose pull` 和 `docker compose up -d --remove-orphans`。首次启动会在 Docker 命名卷生成随机管理令牌、业务 API Key、私有 CA 和数据库凭据。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。
+仓库跟踪的 `.env` 含有 `WEB_PASSWORD=123456` 和 `CLIENT_API_KEY=123456`。这两项是公开、所有下载者共用的示例凭据；在允许其他设备访问前，请先改掉。`WEB_PASSWORD` 用于网页和管理 API（`Authorization: Bearer <WEB_PASSWORD>`），`CLIENT_API_KEY` 用于客户端业务请求；两者都不是上游 OAuth 凭据。默认出口不需要宿主代理。
+
+`deploy.sh` 运行 `docker compose pull` 和 `docker compose up -d --remove-orphans`。首次启动会保存 `.env` 中的两项接入凭据，并创建私有 CA、内部凭据和命名卷。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
 
 在部署宿主机访问 `http://127.0.0.1:18183/`。从其他设备访问时，把 `127.0.0.1` 换成宿主机实际地址。若 18183 已被占用，先修改 `.env` 的 `GATEWAY_HOST_PORT`。
 
 ## 登录管理界面与授权账号
 
-在**部署宿主机**分别读取管理密码和客户端 API Key：
-
-```sh
-docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/management-token
-docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/api-token
-```
-
-在网页输入**管理令牌**。进入“账号管理”，对停用的 Initial account 执行 Device Code 授权，确认原生登录完成后开启调度。若要加入第二个账号，选择“新增独立账号”，配置出口代理、完成该账号的 Device Code 登录，再启用调度。网页授权发生在账号独立原生环境中；客户端 API Key 不是上游 OAuth 凭据。
+在网页输入 `.env` 中的 `WEB_PASSWORD`。进入“账号管理”，对停用的 Initial account 执行 Device Code 授权，确认原生登录完成后开启调度。若要加入第二个账号，选择“新增独立账号”，配置出口代理、完成该账号的 Device Code 登录，再启用调度。网页授权发生在账号独立原生环境中。
 
 ## 接入 Codex 客户端
 
-Codex 的 API Key 登录使用**客户端 API Key**。若 CLI 与服务部署在同一台宿主机，通过标准输入传给 Codex，避免把密钥放进命令参数：
+Codex 的 API Key 登录使用 `.env` 中的 `CLIENT_API_KEY`。若 CLI 与服务部署在同一台宿主机，通过标准输入传给 Codex，避免把密钥放进命令参数：
 
 ```sh
-gateway_api_key="$(docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/api-token)"
-printf '%s' "$gateway_api_key" | codex login --with-api-key
-unset gateway_api_key
+(. ./.env; printf '%s' "$CLIENT_API_KEY" | codex login --with-api-key)
 ```
 
-若 CLI 在另一台电脑上，先以安全方式传递客户端 API Key，再通过该电脑的标准输入执行 `codex login --with-api-key`。此操作会替换该 CLI 当前保存的登录；管理令牌不要用于业务请求。
+若 CLI 在另一台电脑上，先以安全方式传递客户端 API Key，再通过该电脑的标准输入执行 `codex login --with-api-key`。此操作会替换该 CLI 当前保存的登录；网页密码不要用于业务请求。
 
 在网页“主对话会话”页面，为每个主对话创建一个入口，并复制页面给出的 Base URL 或启动命令。保留 Codex 默认 OpenAI provider，只为本次运行修改 `openai_base_url`：
 
@@ -85,7 +78,7 @@ codex -c 'openai_base_url="http://127.0.0.1:18183/session/<root>/v1"' resume
 
 ## 运维与镜像标签
 
-Compose 直接从 GitHub Container Registry 拉取 [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) 和 [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine)。每次发布还为两张镜像生成相同 UTC 时间戳标签；`.env` 不包含镜像引用，仓库提供的 Compose 文件始终使用 `:latest`。MySQL、Redis 使用不带摘要后缀的普通版本标签。Compose 项目名已写在 `docker-compose.yml` 中，无需在 `.env` 配置。
+Compose 直接从 GitHub Container Registry 拉取 [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) 和 [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine)。每次发布还为两张镜像生成相同 UTC 时间戳标签；`.env` 包含公开的默认接入凭据和宿主端口，不包含镜像引用，仓库提供的 Compose 文件始终使用 `:latest`。MySQL、Redis 使用不带摘要后缀的普通版本标签。Compose 项目名已写在 `docker-compose.yml` 中，无需在 `.env` 配置。
 
 使用 `docker compose ps` 和 `docker compose logs --tail=100 gateway account-manager` 查看状态。`docker compose down` 会停止 Compose 服务并保留数据卷。**不要把 `down -v` 当作日常停止命令**：凭据、对话状态和数据库都在卷中，账号管理器还会创建不在 Compose 静态列表中的账号卷。维护前须备份数据库及项目、账号相关数据卷。
 

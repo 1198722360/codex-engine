@@ -41,38 +41,31 @@ Port **18183** is published on all host interfaces over plain HTTP. Use a truste
 ```sh
 git clone https://github.com/1198722360/codex-engine.git
 cd codex-engine
-# .env only sets GATEWAY_HOST_PORT; the default route needs no host proxy.
+# Edit WEB_PASSWORD and CLIENT_API_KEY in .env before starting.
 ./deploy.sh
 docker compose ps
 curl -fsS http://127.0.0.1:18183/health
 ```
 
-`deploy.sh` only runs `docker compose pull` and `docker compose up -d --remove-orphans`. The first start creates random management/API credentials, a private CA, database credentials, and named volumes. It also registers a disabled **Initial account**; it does not authorize that account automatically.
+The tracked `.env` contains `WEB_PASSWORD=123456` and `CLIENT_API_KEY=123456`. These are public, shared example credentials, so change both values before deploying on a reachable host. `WEB_PASSWORD` authenticates the web UI and management API (`Authorization: Bearer <WEB_PASSWORD>`); `CLIENT_API_KEY` authenticates client requests. Neither is an upstream OAuth credential. The default route needs no host proxy.
+
+`deploy.sh` runs `docker compose pull` and `docker compose up -d --remove-orphans`. The first start stores the two configured access credentials and creates a private CA, internal credentials, and named volumes. It also registers a disabled **Initial account**; it does not authorize that account automatically. To rotate either access credential later, edit `.env` and rerun `./deploy.sh`. Sign in again with the new web password, and update clients that use the old API key.
 
 The web UI is at `http://127.0.0.1:18183/` on the deployment host. For another device, replace `127.0.0.1` with the host's reachable address. Change `GATEWAY_HOST_PORT` in `.env` if 18183 is occupied.
 
 ## Sign in and authorize an account
 
-Read the separate management password and client API key **on the deployment host**:
-
-```sh
-docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/management-token
-docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/api-token
-```
-
-Enter the **management token** in the web UI. In **账号管理** (Accounts), authorize the disabled Initial account with the Device Code flow, then enable it for scheduling. To add another account, use **新增独立账号** (New independent account), choose its proxy, complete its Device Code login, and enable it. The client API key is not an upstream OAuth credential.
+Enter the `WEB_PASSWORD` value from `.env` in the web UI. In **账号管理** (Accounts), authorize the disabled Initial account with the Device Code flow, then enable it for scheduling. To add another account, use **新增独立账号** (New independent account), choose its proxy, complete its Device Code login, and enable it.
 
 ## Connect a Codex client
 
-Use the **client API key** for Codex API-key login. When the CLI runs on the deployment host, pass the key through standard input rather than a command-line argument:
+Use the `CLIENT_API_KEY` value from `.env` for Codex API-key login. When the CLI runs on the deployment host, pass it through standard input rather than a command-line argument:
 
 ```sh
-gateway_api_key="$(docker compose run --rm --no-deps --entrypoint cat gateway /run/bootstrap/api-token)"
-printf '%s' "$gateway_api_key" | codex login --with-api-key
-unset gateway_api_key
+(. ./.env; printf '%s' "$CLIENT_API_KEY" | codex login --with-api-key)
 ```
 
-For a CLI on another machine, transfer the client API key securely and pass it to `codex login --with-api-key` through standard input there. This replaces that CLI's saved login; keep the management token separate.
+For a CLI on another machine, transfer the client API key securely and pass it to `codex login --with-api-key` through standard input there. This replaces that CLI's saved login; keep the web password separate.
 
 In the web UI's **主对话会话** (Main conversations) page, create one entry for each main conversation. Copy its Base URL or the generated launch command. Keep Codex's default OpenAI provider and change only `openai_base_url` for that run:
 
@@ -85,7 +78,7 @@ Replace `<root>` with the value shown on the page and use the host's reachable a
 
 ## Operations and release tags
 
-Compose pulls [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) and [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine) directly from GitHub Container Registry. Releases also receive a shared UTC timestamp tag for each image; `.env` contains no image references and the supplied Compose file always selects `:latest`. MySQL and Redis use ordinary version tags without digest suffixes. The Compose project name is defined in `docker-compose.yml` and needs no `.env` setting.
+Compose pulls [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) and [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine) directly from GitHub Container Registry. Releases also receive a shared UTC timestamp tag for each image; `.env` contains the public default access credentials and host port, but no image references, and the supplied Compose file always selects `:latest`. MySQL and Redis use ordinary version tags without digest suffixes. The Compose project name is defined in `docker-compose.yml` and needs no `.env` setting.
 
 Use `docker compose ps` and `docker compose logs --tail=100 gateway account-manager` to inspect runtime status. `docker compose down` stops Compose services while retaining their volumes. **Do not use `down -v` as a routine stop command**: credentials, conversation state, and the database live in volumes, and the account manager creates additional per-account volumes outside the static Compose list. Back up the database and project/account volumes before maintenance.
 
