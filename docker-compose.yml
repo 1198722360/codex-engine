@@ -1,12 +1,12 @@
-name: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
+name: codex-engine-public
 
 x-gateway: &gateway
-  image: ${CODEX_GATEWAY_IMAGE:-wxyin/codex-engine-gateway:latest}
+  image: ghcr.io/1198722360/codex-engine-gateway:latest
   platform: linux/arm64
 
 services:
   engine-image:
-    image: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
+    image: ghcr.io/1198722360/codex-engine-engine:latest
     platform: linux/arm64
     entrypoint: [/bin/true]
     network_mode: none
@@ -16,10 +16,11 @@ services:
     <<: *gateway
     entrypoint: [python3, /opt/dispatcher/public-init.py]
     environment:
-      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME}
       CODEX_NATIVE_VERSION: "0.155.1"
-      CODEX_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
+      CODEX_ENGINE_IMAGE: ghcr.io/1198722360/codex-engine-engine:latest
       ACCOUNT_DEFAULT_PROXY_SCHEME: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}
+      PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-}
     depends_on:
       engine-image: {condition: service_completed_successfully}
     network_mode: none
@@ -110,7 +111,7 @@ services:
     user: '65534:65534'
     entrypoint: [python3, /opt/dispatcher/parent-relay.py]
     environment:
-      PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-7897}
+      PARENT_PROXY_PORT: ${PARENT_PROXY_PORT:-}
     extra_hosts: [host.docker.internal:host-gateway]
     networks: [parent-plane, external]
     ports: ["${GATEWAY_HOST_PORT:-18183}:18083"]
@@ -134,11 +135,11 @@ services:
       ca-publish: {condition: service_completed_successfully}
     environment:
       ACCOUNT_MANAGER_STATE: /run/manager/runtime
-      ACCOUNT_MANAGER_PROJECT: ${COMPOSE_PROJECT_NAME:-codex-engine-public}
-      ACCOUNT_ENGINE_IMAGE: ${CODEX_ENGINE_IMAGE:-wxyin/codex-engine-engine:latest}
+      ACCOUNT_MANAGER_PROJECT: ${COMPOSE_PROJECT_NAME}
+      ACCOUNT_ENGINE_IMAGE: ghcr.io/1198722360/codex-engine-engine:latest
       ACCOUNT_ENGINE_RELEASES: /run/manager/releases
-      ACCOUNT_ENGINE_NETWORK: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_engine-plane
-      ACCOUNT_PUBLIC_CA_VOLUME: ${COMPOSE_PROJECT_NAME:-codex-engine-public}_public-ca
+      ACCOUNT_ENGINE_NETWORK: ${COMPOSE_PROJECT_NAME}_engine-plane
+      ACCOUNT_PUBLIC_CA_VOLUME: ${COMPOSE_PROJECT_NAME}_public-ca
       ACCOUNT_DEFAULT_PROXY: ${ACCOUNT_DEFAULT_PROXY_SCHEME:-http}://parent-relay:17897
       NATIVE_METRIC_EXPORT_INTERVAL_MS: ${NATIVE_METRIC_EXPORT_INTERVAL_MS:-10000}
     volumes:

@@ -21,7 +21,7 @@ flowchart LR
     gateway -->|账号出口代理| manager
     manager -->|独立账号代理| upstream["上游 Codex 服务"]
     manager -->|默认出口| relay
-    relay -->|host.docker.internal:7897| upstream
+    relay -->|直连 CONNECT，或已配置的宿主代理| upstream
 ```
 
 Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL、Redis。一次性服务负责生成凭据、私有 CA 并准备引擎镜像。账号管理器另外为每个账号创建 Engine 容器及私有数据卷；这些容器不在 Compose 静态服务列表中。
@@ -31,7 +31,7 @@ Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL�
 ## 运行前提
 
 - 在 Linux arm64 宿主机或运行 Docker Desktop 的 Apple Silicon 电脑上安装 Docker 和 Compose 插件。本包只验证了 Linux arm64 镜像；其他架构尚未验收。
-- 宿主机上游代理须从容器通过 `host.docker.internal:7897` 访问。按实际代理端口修改 `.env` 的 `PARENT_PROXY_PORT`，并将 `ACCOUNT_DEFAULT_PROXY_SCHEME` 设为匹配的 `http` 或 `socks5h`。仅监听宿主机回环地址的代理未必接受容器连接。管理界面也支持为单个账号设置独立代理。
+- 默认出口经受限的 HTTP CONNECT 中继直连，仅允许 `chatgpt.com:443`、`ab.chatgpt.com:443` 和 `auth.openai.com:443`。宿主代理不是必需项：若要使用，在 `.env` 中把 `PARENT_PROXY_PORT` 设为容器经 `host.docker.internal` 能访问的代理端口，并按代理类型设置 `ACCOUNT_DEFAULT_PROXY_SCHEME=http` 或 `socks5h`。端口留空或不设置时走直连，此时协议须为 `http`。仅监听宿主机回环地址的代理未必接受容器连接。管理界面也支持为单个账号设置独立代理。
 - 部署环境须允许访问 Docker socket：初始化服务要读取引擎镜像身份，账号管理器要创建独立 Engine 容器。请保护宿主机和 Docker 守护进程的访问权限。
 
 默认 **18183** 端口以明文 HTTP 监听宿主机所有网卡。向更大范围开放前，应在受信任网络中使用，或自行配置 TLS／反向代理和访问控制。
@@ -41,7 +41,7 @@ Compose 常驻五项服务：网关、账号管理器、父代理中继、MySQL�
 ```sh
 git clone https://github.com/1198722360/codex-engine.git
 cd codex-engine
-# 先检查 .env，尤其是 PARENT_PROXY_PORT 和 GATEWAY_HOST_PORT。
+# .env 只设置 GATEWAY_HOST_PORT；默认出口无需宿主代理。
 ./deploy.sh
 docker compose ps
 curl -fsS http://127.0.0.1:18183/health
@@ -85,13 +85,13 @@ codex -c 'openai_base_url="http://127.0.0.1:18183/session/<root>/v1"' resume
 
 ## 运维与镜像标签
 
-公开 Docker Hub 仓库分别为 [`wxyin/codex-engine-gateway`](https://hub.docker.com/r/wxyin/codex-engine-gateway) 与 [`wxyin/codex-engine-engine`](https://hub.docker.com/r/wxyin/codex-engine-engine)。每张镜像发布 `latest` 与相同 UTC 时间戳标签。仓库提供的 `.env` 选定一对相同时间戳标签；Compose 缺省值为 `latest`。MySQL、Redis 使用不带摘要后缀的普通版本标签。
+Compose 直接从 GitHub Container Registry 拉取 [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) 和 [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine)。每次发布还为两张镜像生成相同 UTC 时间戳标签；`.env` 不包含镜像引用，仓库提供的 Compose 文件始终使用 `:latest`。MySQL、Redis 使用不带摘要后缀的普通版本标签。Compose 项目名已写在 `docker-compose.yml` 中，无需在 `.env` 配置。
 
 使用 `docker compose ps` 和 `docker compose logs --tail=100 gateway account-manager` 查看状态。`docker compose down` 会停止 Compose 服务并保留数据卷。**不要把 `down -v` 当作日常停止命令**：凭据、对话状态和数据库都在卷中，账号管理器还会创建不在 Compose 静态列表中的账号卷。维护前须备份数据库及项目、账号相关数据卷。
 
-再次执行 `./deploy.sh` 会保留卷，并沿用 `.env` 选定的网关／引擎时间戳对。MySQL、Redis 的版本标签由上游维护，下次拉取时内容可能变化。修改引擎镜像标签不等于原地升级：初始化程序会核对实际镜像身份，并拒绝未经审查的替换。运行中换版须另行执行请求排空与状态迁移流程。
+再次执行 `./deploy.sh` 会保留卷，但会拉取当时的 `:latest` 镜像。MySQL、Redis 的版本标签由上游维护，下次拉取时内容也会变化。即使标签仍为 `:latest`，引擎镜像身份一旦变化，已保存的版本清单仍会拒绝它；普通的 `deploy.sh` 重跑不是升级流程。更新引擎前须完成受控的请求排空与状态迁移。
 
-本包的新装检查覆盖匿名镜像拉取、Compose 启动、服务健康与网页入口；尚未覆盖全新账号 OAuth 授权、真实模型请求或运行中跨版本升级。服务端遥测依照已确认的来源事实处理；证据不足的事件会留在本地，不冒充上游已交付。
+使用已登录 GHCR 的 Docker 进行隔离新装，已通过 Compose 启动、服务健康、网页入口、重复部署及默认直连路由的 TLS 校验。公开 GHCR 包的匿名拉取仍待验证。全新账号 OAuth 授权、真实模型请求、运行中跨版本升级也尚未验收。服务端遥测依照已确认的来源事实处理；证据不足的事件会留在本地，不冒充上游已交付。
 
 ## 分发条款
 

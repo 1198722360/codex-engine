@@ -21,7 +21,7 @@ flowchart LR
     gateway -->|outbound account proxy| manager
     manager -->|custom account proxy| upstream["Upstream Codex service"]
     manager -->|default route| relay
-    relay -->|host.docker.internal:7897| upstream
+    relay -->|direct CONNECT, or configured host proxy| upstream
 ```
 
 The five long-running Compose services are the gateway, account manager, parent relay, MySQL, and Redis. One-shot services initialize credentials, the private CA, and the engine image. The account manager creates an additional Engine container and private volumes for each account; those containers are not static Compose services.
@@ -31,7 +31,7 @@ For a model request, the gateway checks the client API key, binds the request to
 ## Requirements
 
 - Docker with Compose on Linux arm64 or Apple Silicon with Docker Desktop. Other architectures have not been verified for this package.
-- A host-side upstream proxy reachable **from containers** at `host.docker.internal:7897` by default. Set `PARENT_PROXY_PORT` in `.env` to its port and set `ACCOUNT_DEFAULT_PROXY_SCHEME` to `http` or `socks5h` to match. A proxy listening only on host loopback may not accept container connections. Individual accounts may use their own proxy in the web UI.
+- The default outbound route is direct through a restricted HTTP CONNECT relay. It permits `chatgpt.com:443`, `ab.chatgpt.com:443`, and `auth.openai.com:443`. A host proxy is optional: set `PARENT_PROXY_PORT` in `.env` to a proxy port reachable by containers through `host.docker.internal`, and set `ACCOUNT_DEFAULT_PROXY_SCHEME` to `http` or `socks5h` to match that proxy. Leave the port empty or unset for direct egress; in that mode the scheme must be `http`. A host proxy listening only on loopback may not accept container connections. Individual accounts may use their own proxy in the web UI.
 - Docker socket access: initialization inspects the Engine image, and the account manager creates isolated Engine containers. Protect the host and Docker daemon.
 
 Port **18183** is published on all host interfaces over plain HTTP. Use a trusted network or add TLS/reverse-proxy and access controls before exposing it more broadly.
@@ -41,7 +41,7 @@ Port **18183** is published on all host interfaces over plain HTTP. Use a truste
 ```sh
 git clone https://github.com/1198722360/codex-engine.git
 cd codex-engine
-# Review .env, especially PARENT_PROXY_PORT and GATEWAY_HOST_PORT.
+# .env only sets GATEWAY_HOST_PORT; the default route needs no host proxy.
 ./deploy.sh
 docker compose ps
 curl -fsS http://127.0.0.1:18183/health
@@ -85,13 +85,13 @@ Replace `<root>` with the value shown on the page and use the host's reachable a
 
 ## Operations and release tags
 
-The public Docker Hub repositories are [`wxyin/codex-engine-gateway`](https://hub.docker.com/r/wxyin/codex-engine-gateway) and [`wxyin/codex-engine-engine`](https://hub.docker.com/r/wxyin/codex-engine-engine). Each image is published as `latest` and with a shared UTC timestamp tag. The supplied `.env` chooses the matching timestamp pair; Compose fallbacks are `latest`. MySQL and Redis use ordinary version tags without digest suffixes.
+Compose pulls [`ghcr.io/1198722360/codex-engine-gateway:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-gateway) and [`ghcr.io/1198722360/codex-engine-engine:latest`](https://github.com/users/1198722360/packages/container/package/codex-engine-engine) directly from GitHub Container Registry. Releases also receive a shared UTC timestamp tag for each image; `.env` contains no image references and the supplied Compose file always selects `:latest`. MySQL and Redis use ordinary version tags without digest suffixes. The Compose project name is defined in `docker-compose.yml` and needs no `.env` setting.
 
 Use `docker compose ps` and `docker compose logs --tail=100 gateway account-manager` to inspect runtime status. `docker compose down` stops Compose services while retaining their volumes. **Do not use `down -v` as a routine stop command**: credentials, conversation state, and the database live in volumes, and the account manager creates additional per-account volumes outside the static Compose list. Back up the database and project/account volumes before maintenance.
 
-Re-running `./deploy.sh` retains volumes and the selected timestamp-tagged gateway/Engine pair. MySQL and Redis version tags are maintained upstream and may change on a later pull. Changing the Engine image tag is not an in-place upgrade: initialization checks its actual image identity and rejects an unreviewed replacement. Running requests require a separate controlled drain and migration process before a version change.
+Re-running `./deploy.sh` retains volumes but pulls the current `:latest` images. MySQL and Redis version tags are maintained upstream and may change on a later pull. Even under the same `:latest` tag, a changed Engine image identity is rejected by the saved release manifest; a normal `deploy.sh` rerun is therefore not an upgrade path. An Engine update needs the controlled drain and migration flow before replacement.
 
-The clean-install check covered anonymous image pulls, Compose startup, service health, and the web endpoint. It did not include a fresh OAuth authorization, live model call, or running cross-version upgrade. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
+An isolated fresh install with authenticated GHCR pulls passed Compose startup, service health, the web endpoint, repeated deployment, and TLS verification through the default direct route. Anonymous pulls from public GHCR packages still need verification. Fresh OAuth authorization, live model calls, and running cross-version upgrades also remain unverified. Server-side telemetry follows verified source facts; events without enough evidence may remain local instead of being delivered upstream.
 
 ## Distribution terms
 
