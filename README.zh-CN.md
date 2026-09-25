@@ -49,7 +49,7 @@ curl -fsS http://127.0.0.1:18183/health
 
 仓库跟踪的 `.env` 含有 `WEB_PASSWORD=123456` 和 `CLIENT_API_KEY=123456`。这两项是公开、所有下载者共用的示例凭据；在允许其他设备访问前，请先改掉。`WEB_PASSWORD` 用于网页和管理 API（`Authorization: Bearer <WEB_PASSWORD>`），`CLIENT_API_KEY` 用于客户端业务请求；两者都不是上游 OAuth 凭据。默认出口不需要宿主代理。
 
-`deploy.sh` 会先切换到部署文件所在目录，并按 Compose 标签清理旧版遗留的 `engine-image` 一次性容器，再运行 `docker compose pull`、拉取 `ghcr.io/1198722360/codex-engine-engine:latest`，最后运行 `docker compose up -d --remove-orphans`。这一步不删除本地数据目录和常驻服务。一次性 `init` 服务在 Gateway 镜像内完成身份、CA 和引擎清单检查。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建上述本地目录。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
+`deploy.sh` 会先切换到部署文件所在目录，并按 Compose 标签清理旧版遗留的 `engine-image` 一次性容器，再运行 `docker compose pull`。首次部署没有发布清单时，它会拉取 `ghcr.io/1198722360/codex-engine-engine:latest`；已有环境则读取 `manager-state/releases/` 中登记的平台镜像 config digest，若本机仍有该镜像就把 `latest` 标签恢复到它，避免把可变标签直接带入旧环境，最后运行 `docker compose up -d --remove-orphans`。若登记的旧镜像已被清理，脚本会在启动前以中英文提示停止，要求先恢复该镜像或执行受控升级。这一步不删除本地数据目录和常驻服务。一次性 `init` 服务在 Gateway 镜像内完成身份、CA 和引擎清单检查。请保持随仓库提供的 `start-redis.sh` 与 `docker-compose.yml` 位于同一目录；Compose 会以只读方式把它挂载到 Redis 容器，用于密码校验和配置生成。首次启动会保存 `.env` 中的两项接入凭据，并创建上述本地目录。它还会登记一个停用状态的 **Initial account**，不会自动完成账号授权。日后轮换任一接入凭据时，修改 `.env` 后重新运行 `./deploy.sh`；随后用新网页密码登录，并更新使用旧 API Key 的客户端。
 
 在部署宿主机访问 `http://127.0.0.1:18183/`。从其他设备访问时，把 `127.0.0.1` 换成宿主机实际地址。若 18183 已被占用，先修改 `.env` 的 `GATEWAY_HOST_PORT`。
 
@@ -82,7 +82,7 @@ Compose 直接从 GitHub Container Registry 拉取 [`ghcr.io/1198722360/codex-en
 
 使用 `docker compose ps` 和 `docker compose logs --tail=100 gateway account-manager` 查看状态。`docker compose down` 会停止 Compose 服务并保留数据卷。**不要把 `down -v` 当作日常停止命令**：凭据、对话状态和数据库都在卷中，账号管理器还会创建不在 Compose 静态列表中的账号卷。维护前须备份数据库及项目、账号相关数据卷。
 
-再次执行 `./deploy.sh` 会保留卷，但会拉取当时的 `:latest` 镜像。MySQL、Redis 的版本标签由上游维护，下次拉取时内容也会变化。即使标签仍为 `:latest`，引擎镜像身份一旦变化，已保存的版本清单仍会拒绝它；普通的 `deploy.sh` 重跑不是升级流程。更新引擎前须完成受控的请求排空与状态迁移。
+再次执行 `./deploy.sh` 会保留目录和常驻服务，并更新 Gateway、管理器等 Compose 镜像。已有发布清单时，脚本会锁住已登记的 Engine config digest；普通重部署不会拉入新的 Engine，也不会改写清单。若旧 Engine 镜像不在本机，脚本会在 `init` 启动前停止并提示恢复镜像或执行受控升级。Engine 更新须完成请求排空、状态迁移、替换和提交，不能把 `latest` 重新拉取当成升级流程。MySQL、Redis 的版本标签由上游维护，下次拉取时内容也会变化。
 
 此前一套公开仓库新克隆环境完成过匿名拉取和新装，Compose 启动、服务健康与网页入口均通过；当前包可见性和服务器架构仍须在目标主机再次核对。另一隔离新装完成重复部署和默认直连路由的 TLS 校验。全新账号 OAuth 授权、真实模型请求、运行中跨版本升级仍未验收。服务端遥测依照已确认的来源事实处理；证据不足的事件会留在本地，不冒充上游已交付。
 
